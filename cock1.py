@@ -1,40 +1,46 @@
-import csv
+import psycopg2
 import pandas as pd
-from openpyxl import Workbook
 
-def clean_csv(input_file, output_file):
-    with open(input_file, 'r') as file:
-        csv_reader = csv.reader(file)
-        data = list(csv_reader)
+# Подключение к базе данных PostgreSQL
+conn = psycopg2.connect(
+    host="localhost",
+    database="postgres",
+    user="postgres",
+    password="loh123"
+)
 
-    cleaned_data = []
-    for row in data:
-        cleaned_row = []
-        for item in row:
-            cleaned_item = item.replace(',', '')
-            cleaned_row.append(cleaned_item)
-        cleaned_data.append(cleaned_row)
+# Создание курсора для выполнения SQL-запросов
+cur = conn.cursor()
 
-    # Создаем DataFrame с очищенными данными
-    df = pd.DataFrame(cleaned_data)
+# Импорт данных из Excel файла
+excel_file = r"C:\Users\petuu\Desktop\DGA dataset\UK\Lewis et al 2022 DGA data\output.xlsx"  # Укажите путь к вашему Excel файлу
+sheet_name = "Sheet"  # Укажите имя листа в Excel файле
+excel_data = pd.read_excel(excel_file, sheet_name=sheet_name)
 
-    # Создаем новый Excel файл
-    workbook = Workbook()
-    sheet = workbook.active
+# Замена названий столбцов
+column_names = excel_data.columns
+new_column_names = [f"Газ{i}" for i in range(1, len(column_names) + 1)]
+excel_data.columns = new_column_names
 
-    # Записываем значения в отдельные ячейки
-    for index, row in df.iterrows():
-        for col_num, value in enumerate(row):
-            values = value.split(',')
-            for i, val in enumerate(values):
-                sheet.cell(row=index+1, column=col_num+1+i, value=val.strip())
+# Создание таблицы в базе данных
+table_name = "your_table_name"
 
-    # Сохраняем Excel файл
-    workbook.save(output_file)
-    print("CSV файл успешно очищен и обработан. Результат сохранен в Excel.")
+# Создание SQL-запроса для создания таблицы
+columns_str = ', '.join([f'"{col}" TEXT' for col in new_column_names])
+create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ({columns_str});"
 
-# Пример использования
-input_file = r'C:\Users\shami\Desktop\dlya galieva\dga\Lewis et al 2022 DGA data\Lewis_et_al_2022_Transformer_A.csv'   # Путь к исходному файлу CSV
-output_file = 'output.xlsx' # Путь к выходному файлу Excel
+# Выполнение SQL-запроса для создания таблицы
+cur.execute(create_table_query)
 
-clean_csv(input_file, output_file)
+# Вставка данных в таблицу
+for row in excel_data.itertuples(index=False):
+    placeholders = ', '.join(['%s' for _ in new_column_names])
+    insert_query = f"INSERT INTO {table_name} VALUES ({placeholders});"
+    cur.execute(insert_query, row)
+
+# Закрытие курсора и сохранение изменений в базе данных
+cur.close()
+conn.commit()
+
+# Закрытие соединения с базой данных PostgreSQL
+conn.close()
